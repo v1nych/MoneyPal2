@@ -1,31 +1,48 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router-dom'
 import type { Currency, MoneyPalStore, SavingsPeriod } from '../types'
-import { formatMonthLabel, shiftMonth } from '../lib/format'
+
+export interface ShellOutletContext {
+  store: MoneyPalStore
+  monthKey: string
+  onMonth: (key: string) => void
+  period: SavingsPeriod
+  onPeriod: (p: SavingsPeriod) => void
+  onCurrency: (c: Currency) => void
+  onRate: (n: number) => void
+  update: (fn: (draft: MoneyPalStore) => void) => void
+}
 
 interface Props {
   store: MoneyPalStore
-  onCurrency: (c: Currency) => void
-  onRate: (n: number) => void
   monthKey: string
   onMonth: (key: string) => void
-  period?: SavingsPeriod
-  onPeriod?: (p: SavingsPeriod) => void
-  showPeriod?: boolean
+  period: SavingsPeriod
+  onPeriod: (p: SavingsPeriod) => void
+  onCurrency: (c: Currency) => void
+  onRate: (n: number) => void
+  update: (fn: (draft: MoneyPalStore) => void) => void
 }
 
 export function AppShell({
   store,
-  onCurrency,
-  onRate,
   monthKey,
   onMonth,
-  period = 'month',
+  period,
   onPeriod,
-  showPeriod = false,
+  onCurrency,
+  onRate,
+  update,
 }: Props) {
-  const location = useLocation()
-  const isDebt = location.pathname.startsWith('/debt')
-  const isSavings = location.pathname.startsWith('/savings')
+  const ctx: ShellOutletContext = {
+    store,
+    monthKey,
+    onMonth,
+    period,
+    onPeriod,
+    onCurrency,
+    onRate,
+    update,
+  }
 
   return (
     <div className="app-shell">
@@ -53,58 +70,8 @@ export function AppShell({
             Debt
           </NavLink>
         </nav>
-        <div className="topbar-controls">
-          <div className="month-nav">
-            <button type="button" className="icon-btn" onClick={() => onMonth(shiftMonth(monthKey, -1))} aria-label="Previous month">
-              ‹
-            </button>
-            <span className="month-label">{formatMonthLabel(monthKey)}</span>
-            <button type="button" className="icon-btn" onClick={() => onMonth(shiftMonth(monthKey, 1))} aria-label="Next month">
-              ›
-            </button>
-          </div>
-          {showPeriod && onPeriod && (isSavings || isDebt) && (
-            <div className="seg period-seg">
-              {(['month', 'year', 'all'] as SavingsPeriod[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className={period === p ? 'on' : ''}
-                  onClick={() => onPeriod(p)}
-                >
-                  {p === 'all' ? 'All time' : p === 'year' ? 'Year' : 'Month'}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="currency-block">
-            <div className="seg">
-              {(['GBP', 'KES'] as Currency[]).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={store.settings.currency === c ? 'on' : ''}
-                  onClick={() => onCurrency(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-            <label className="rate-label">
-              Exchange rate: 1 GBP =
-              <input
-                type="number"
-                min={1}
-                step={1}
-                value={store.settings.gbpToKes}
-                onChange={(e) => onRate(Number(e.target.value) || 0)}
-              />
-              KES
-            </label>
-          </div>
-        </div>
       </header>
-      <Outlet />
+      <Outlet context={ctx} />
     </div>
   )
 }

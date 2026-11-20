@@ -1,5 +1,17 @@
 import type { SavingsEntry, SavingsPot } from '../types'
-import { monthsBetween, todayISO } from './format'
+import { todayISO } from './format'
+
+function parseDay(iso: string): Date {
+  return new Date(iso.slice(0, 10) + 'T12:00:00')
+}
+
+/** Whole calendar days from start (inclusive) to end (exclusive of end day beyond start). */
+export function daysBetween(startISO: string, endISO: string): number {
+  const s = parseDay(startISO)
+  const e = parseDay(endISO)
+  const ms = e.getTime() - s.getTime()
+  return Math.max(0, Math.round(ms / 86_400_000))
+}
 
 export function potPrincipal(entries: SavingsEntry[], potId: string): number {
   return entries
@@ -17,7 +29,10 @@ export function potBalance(entries: SavingsEntry[], potId: string): number {
   return potPrincipal(entries, potId) + potActualPerformance(entries, potId)
 }
 
-/** Simple accrued projection: principal * rate * (days/365) from first deposit / created. */
+/**
+ * Simple daily accrual on principal: Σ runningPrincipal × rate × (days/365)
+ * across deposit/withdrawal segments up to `asOf`.
+ */
 export function projectedToDate(
   pot: SavingsPot,
   entries: SavingsEntry[],
@@ -34,18 +49,32 @@ export function projectedToDate(
   let prevDate = principalEvents[0].effectiveDate
 
   for (const ev of principalEvents) {
-    const months = monthsBetween(prevDate, ev.effectiveDate)
-    accrued += running * (pot.expectedAnnualRate / 12) * months
+    const days = daysBetween(prevDate, ev.effectiveDate)
+    accrued += running * pot.expectedAnnualRate * (days / 365)
     running += ev.type === 'deposit' ? ev.amount : -ev.amount
     prevDate = ev.effectiveDate
   }
-  const monthsTail = monthsBetween(prevDate, asOf)
-  accrued += running * (pot.expectedAnnualRate / 12) * monthsTail
+  const daysTail = daysBetween(prevDate, asOf)
+  accrued += running * pot.expectedAnnualRate * (daysTail / 365)
   return accrued
 }
 
+/** Projected performance over the next 12 months on current balance. */
 export function projectedNext12Months(balance: number, annualRate: number): number {
   return balance * annualRate
+}
+
+/** Period-scoped projected accrual approximation: balance × rate × fraction of year. */
+export function projectedForPeriod(
+  balance: number,
+  annualRate: number,
+  period: 'month' | 'year' | 'all',
+  pot: SavingsPot,
+  entries: SavingsEntry[],
+): number {
+  if (period === 'all') return projectedToDate(pot, entries)
+  if (period === 'year') return balance * annualRate
+  return balance * annualRate * (30.4375 / 365)
 }
 
 export function entryInPeriod(

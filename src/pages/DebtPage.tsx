@@ -8,8 +8,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useOutletContext } from 'react-router-dom'
+import type { ShellOutletContext } from '../components/AppShell'
 import { EmptyState } from '../components/EmptyState'
 import { MoneyInput } from '../components/MoneyInput'
+import { PageChrome } from '../components/PageChrome'
 import {
   amountLeft,
   formatTerm,
@@ -30,14 +33,8 @@ import {
   todayISO,
 } from '../lib/format'
 import { uid } from '../lib/storage'
-import type { Debt, MoneyPalStore, ProgressMode, SavingsPeriod } from '../types'
+import type { Debt, ProgressMode } from '../types'
 
-interface Props {
-  store: MoneyPalStore
-  monthKey: string
-  period: SavingsPeriod
-  update: (fn: (draft: MoneyPalStore) => void) => void
-}
 
 interface DebtDraft {
   name: string
@@ -82,7 +79,9 @@ function debtMetrics(debt: Debt, totalPaid: number) {
   }
 }
 
-export function DebtPage({ store, monthKey, period, update }: Props) {
+export function DebtPage() {
+  const { store, monthKey, onMonth, period, onPeriod, onCurrency, onRate, update } =
+    useOutletContext<ShellOutletContext>()
   const { currency, gbpToKes, debtProgressMode } = store.settings
   const money = (n: number) => formatMoney(n, currency, gbpToKes)
   const [showArchived, setShowArchived] = useState(false)
@@ -208,10 +207,30 @@ export function DebtPage({ store, monthKey, period, update }: Props) {
 
   return (
     <main className="page">
-      <div className="page-header">
-        <div>
-          <h1>Debt</h1>
-          <div className="filters" style={{ marginTop: '0.65rem' }}>
+      <PageChrome
+        title="Debt"
+        store={store}
+        monthKey={monthKey}
+        onMonth={onMonth}
+        period={period}
+        onPeriod={onPeriod}
+        showPeriod
+        onCurrency={onCurrency}
+        onRate={onRate}
+        actions={
+          <div className="page-actions">
+            <button type="button" className="btn subtle" onClick={() => setShowArchived((v) => !v)}>
+              {showArchived
+                ? 'Show active'
+                : `Archived (${store.debts.filter((d) => d.archivedAt).length})`}
+            </button>
+            <button type="button" className="btn primary" onClick={openCreate}>
+              + New debt
+            </button>
+          </div>
+        }
+        filters={
+          <div className="filters" style={{ marginTop: '0.55rem' }}>
             <span className="filter-chip on">
               {showArchived ? 'Archived' : 'Active'} ({debts.length})
             </span>
@@ -232,18 +251,8 @@ export function DebtPage({ store, monthKey, period, update }: Props) {
               </button>
             </div>
           </div>
-        </div>
-        <div className="page-actions">
-          <button type="button" className="btn subtle" onClick={() => setShowArchived((v) => !v)}>
-            {showArchived
-              ? 'Show active'
-              : `Archived (${store.debts.filter((d) => d.archivedAt).length})`}
-          </button>
-          <button type="button" className="btn primary" onClick={openCreate}>
-            + New debt
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {creating && (
         <section className="card">

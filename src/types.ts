@@ -1,8 +1,6 @@
 export type Currency = 'GBP' | 'KES'
 export type ProgressMode = 'amount' | 'time'
 export type SavingsPeriod = 'month' | 'year' | 'all'
-export type PotCategory = 'Emergency fund' | 'ETF portfolio' | 'Pension' | 'Other'
-
 export interface NamedAmount {
   id: string
   label: string
@@ -46,7 +44,6 @@ export interface CashflowLog {
 export interface SavingsPot {
   id: string
   name: string
-  category: PotCategory
   expectedAnnualRate: number
   notes: string
   createdAt: string

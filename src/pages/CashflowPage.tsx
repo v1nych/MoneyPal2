@@ -2,22 +2,20 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
-import type { CashflowMonth, MoneyPalStore, NamedAmount } from '../types'
+import { useOutletContext } from 'react-router-dom'
+import type { ShellOutletContext } from '../components/AppShell'
+import { PageChrome } from '../components/PageChrome'
+import { MoneyInput } from '../components/MoneyInput'
+import type { CashflowMonth, NamedAmount } from '../types'
 import { cashflowDerived } from '../lib/cashflowMath'
 import { compactAxis, formatDateTime, formatMoney, formatMonthLabel } from '../lib/format'
 import { ensureCashflowMonth, uid } from '../lib/storage'
-import { MoneyInput } from '../components/MoneyInput'
-
-interface Props {
-  store: MoneyPalStore
-  monthKey: string
-  update: (fn: (draft: MoneyPalStore) => void) => void
-}
 
 function NamedList({
   items,
@@ -28,7 +26,7 @@ function NamedList({
   onRemove,
 }: {
   items: NamedAmount[]
-  currency: MoneyPalStore['settings']['currency']
+  currency: 'GBP' | 'KES'
   gbpToKes: number
   onChange: (id: string, patch: Partial<NamedAmount>) => void
   onAdd: () => void
@@ -50,7 +48,12 @@ function NamedList({
             gbpToKes={gbpToKes}
             onChange={(n) => onChange(item.id, { amount: n })}
           />
-          <button type="button" className="icon-trash" aria-label="Remove" onClick={() => onRemove(item.id)}>
+          <button
+            type="button"
+            className="icon-trash"
+            aria-label="Remove"
+            onClick={() => onRemove(item.id)}
+          >
             ⌫
           </button>
         </div>
@@ -62,7 +65,9 @@ function NamedList({
   )
 }
 
-export function CashflowPage({ store, monthKey, update }: Props) {
+export function CashflowPage() {
+  const { store, monthKey, onMonth, onCurrency, onRate, update } =
+    useOutletContext<ShellOutletContext>()
   const { currency, gbpToKes } = store.settings
   const month = store.cashflow[monthKey] ?? ensureCashflowMonth(structuredClone(store), monthKey)
   const d = cashflowDerived(month)
@@ -90,7 +95,7 @@ export function CashflowPage({ store, monthKey, update }: Props) {
     { name: 'Extras', value: d.extras, fill: '#ea580c' },
     { name: 'Net Rental Income', value: d.netRentalIncome, fill: '#0ea5e9' },
     { name: 'Rental Savings', value: d.rentalSavings, fill: '#059669' },
-    { name: 'Free Cash', value: d.freeCash, fill: '#7c6cf0' },
+    { name: 'Free Cash', value: d.freeCash, fill: d.freeCash < 0 ? '#dc2626' : '#7c6cf0' },
   ]
 
   const logs = store.cashflowLogs
@@ -126,20 +131,30 @@ export function CashflowPage({ store, monthKey, update }: Props) {
 
   return (
     <main className="page">
-      <div className="page-header">
-        <h1>Cashflow</h1>
-      </div>
+      <PageChrome
+        title="Cashflow"
+        store={store}
+        monthKey={monthKey}
+        onMonth={onMonth}
+        onCurrency={onCurrency}
+        onRate={onRate}
+      />
 
       <div className="card-grid">
         <section className="card">
           <h2>Income</h2>
+          <p className="card-sub">Monthly pay</p>
           <div className="field">
             <span className="label">Gross Income</span>
             <MoneyInput
               value={month.grossIncome}
               currency={currency}
               gbpToKes={gbpToKes}
-              onChange={(n) => patchMonth((m) => { m.grossIncome = n })}
+              onChange={(n) =>
+                patchMonth((m) => {
+                  m.grossIncome = n
+                })
+              }
             />
           </div>
           <div className="field">
@@ -148,7 +163,11 @@ export function CashflowPage({ store, monthKey, update }: Props) {
               value={month.netIncome}
               currency={currency}
               gbpToKes={gbpToKes}
-              onChange={(n) => patchMonth((m) => { m.netIncome = n })}
+              onChange={(n) =>
+                patchMonth((m) => {
+                  m.netIncome = n
+                })
+              }
             />
           </div>
           <div className="banner">
@@ -158,7 +177,10 @@ export function CashflowPage({ store, monthKey, update }: Props) {
 
         <section className="card">
           <div className="card-head">
-            <h2>Income Expenses</h2>
+            <div>
+              <h2>Income Expenses</h2>
+              <p className="card-sub">Bills &amp; regular outgoings</p>
+            </div>
             <span className="total">{money(d.incomeExpenses)}</span>
           </div>
           <NamedList
@@ -186,7 +208,10 @@ export function CashflowPage({ store, monthKey, update }: Props) {
 
         <section className="card">
           <div className="card-head">
-            <h2>Extras</h2>
+            <div>
+              <h2>Extras</h2>
+              <p className="card-sub">Gifts, tax refunds, bonuses, freelance</p>
+            </div>
             <span className="total">{money(d.extras)}</span>
           </div>
           <NamedList
@@ -214,13 +239,18 @@ export function CashflowPage({ store, monthKey, update }: Props) {
 
         <section className="card">
           <h2>Property Income</h2>
+          <p className="card-sub">Rental income</p>
           <div className="field">
             <span className="label">Gross Property Income</span>
             <MoneyInput
               value={month.grossPropertyIncome}
               currency={currency}
               gbpToKes={gbpToKes}
-              onChange={(n) => patchMonth((m) => { m.grossPropertyIncome = n })}
+              onChange={(n) =>
+                patchMonth((m) => {
+                  m.grossPropertyIncome = n
+                })
+              }
             />
           </div>
           <div className="field">
@@ -229,22 +259,27 @@ export function CashflowPage({ store, monthKey, update }: Props) {
               value={month.netPropertyIncome}
               currency={currency}
               gbpToKes={gbpToKes}
-              onChange={(n) => patchMonth((m) => { m.netPropertyIncome = n })}
+              onChange={(n) =>
+                patchMonth((m) => {
+                  m.netPropertyIncome = n
+                })
+              }
             />
           </div>
           <div className="banner">
-            Property deductions: {money(d.propDeductions)} ({d.propDeductionPct.toFixed(1)}%)
+            Property deductions (gross − net): {money(d.propDeductions)} (
+            {d.propDeductionPct.toFixed(1)}%)
           </div>
         </section>
 
         <section className="card">
           <div className="card-head">
-            <h2>Property Expenses</h2>
+            <div>
+              <h2>Property Expenses</h2>
+              <p className="card-sub">Agent fees, repairs, mortgage interest</p>
+            </div>
             <span className="total">{money(d.propertyExpenses)}</span>
           </div>
-          <p className="footnote" style={{ marginBottom: '0.55rem' }}>
-            Agent fees, repairs, mortgage interest
-          </p>
           <NamedList
             items={month.propertyExpenses}
             currency={currency}
@@ -273,10 +308,11 @@ export function CashflowPage({ store, monthKey, update }: Props) {
         <article className="metric-card">
           <p className="eyebrow">Net Income</p>
           <p className="value">{money(month.netIncome)}</p>
+          <p className="hint">From the Income card</p>
         </article>
         <article className="metric-card">
           <p className="eyebrow">Net Breakdown</p>
-          <p className="value">{money(d.netBreakdown)}</p>
+          <p className={`value ${d.netBreakdown < 0 ? 'neg' : ''}`}>{money(d.netBreakdown)}</p>
           <p className="hint">Net Income − Income Expenses</p>
         </article>
         <article className="metric-card">
@@ -287,20 +323,28 @@ export function CashflowPage({ store, monthKey, update }: Props) {
         <article className="metric-card">
           <p className="eyebrow">Savings Allocation</p>
           <p className="value">{money(d.savingsAllocation)}</p>
-          <p className="hint">% of (Net Breakdown + Extras)</p>
+          <p className="hint">% of max(0, Net Breakdown + Extras)</p>
           <div className="progress-row">
             <div className="mini-seg">
               <button
                 type="button"
                 className={month.savingsMode === 'percent' ? 'on' : ''}
-                onClick={() => patchMonth((m) => { m.savingsMode = 'percent' })}
+                onClick={() =>
+                  patchMonth((m) => {
+                    m.savingsMode = 'percent'
+                  })
+                }
               >
                 %
               </button>
               <button
                 type="button"
                 className={month.savingsMode === 'amount' ? 'on' : ''}
-                onClick={() => patchMonth((m) => { m.savingsMode = 'amount' })}
+                onClick={() =>
+                  patchMonth((m) => {
+                    m.savingsMode = 'amount'
+                  })
+                }
               >
                 £
               </button>
@@ -321,7 +365,11 @@ export function CashflowPage({ store, monthKey, update }: Props) {
                 value={month.savingsValue}
                 currency={currency}
                 gbpToKes={gbpToKes}
-                onChange={(n) => patchMonth((m) => { m.savingsValue = n })}
+                onChange={(n) =>
+                  patchMonth((m) => {
+                    m.savingsValue = n
+                  })
+                }
               />
             )}
             <div className="progress" style={{ maxWidth: 120 }}>
@@ -341,20 +389,28 @@ export function CashflowPage({ store, monthKey, update }: Props) {
         <article className="metric-card">
           <p className="eyebrow">Rental Savings</p>
           <p className="value">{money(d.rentalSavings)}</p>
-          <p className="hint">% of Net Rental Income</p>
+          <p className="hint">% of max(0, Net Rental Income)</p>
           <div className="progress-row">
             <div className="mini-seg">
               <button
                 type="button"
                 className={month.rentalSavingsMode === 'percent' ? 'on' : ''}
-                onClick={() => patchMonth((m) => { m.rentalSavingsMode = 'percent' })}
+                onClick={() =>
+                  patchMonth((m) => {
+                    m.rentalSavingsMode = 'percent'
+                  })
+                }
               >
                 %
               </button>
               <button
                 type="button"
                 className={month.rentalSavingsMode === 'amount' ? 'on' : ''}
-                onClick={() => patchMonth((m) => { m.rentalSavingsMode = 'amount' })}
+                onClick={() =>
+                  patchMonth((m) => {
+                    m.rentalSavingsMode = 'amount'
+                  })
+                }
               >
                 £
               </button>
@@ -375,7 +431,11 @@ export function CashflowPage({ store, monthKey, update }: Props) {
                 value={month.rentalSavingsValue}
                 currency={currency}
                 gbpToKes={gbpToKes}
-                onChange={(n) => patchMonth((m) => { m.rentalSavingsValue = n })}
+                onChange={(n) =>
+                  patchMonth((m) => {
+                    m.rentalSavingsValue = n
+                  })
+                }
               />
             )}
             <div className="progress" style={{ maxWidth: 120 }}>
@@ -392,23 +452,28 @@ export function CashflowPage({ store, monthKey, update }: Props) {
         </article>
         <article className="metric-card wide">
           <p className="eyebrow">Free Cash</p>
-          <p className="value">{money(d.freeCash)}</p>
+          <p className={`value ${d.freeCash < 0 ? 'neg' : ''}`}>{money(d.freeCash)}</p>
           <p className="hint">
             Net Breakdown + Extras + Net Rental Income − Savings Allocation − Rental Savings
           </p>
           <p className="hint">
-            Balance incl. carry-over <strong>{money(balanceInclCarry)}</strong> · carried in from
-            earlier months: {money(carryIn)}
+            Balance incl. carry-over{' '}
+            <strong className={balanceInclCarry < 0 ? 'neg' : ''}>{money(balanceInclCarry)}</strong>{' '}
+            · carried in from earlier months: {money(carryIn)}
           </p>
         </article>
       </div>
 
-      <section className="card">
+      <section className="card notes-log-card">
         <div className="log-box">
           <textarea
             placeholder="Add a note for this log (optional). Ctrl/Cmd+Enter to log"
             value={month.notesDraft ?? ''}
-            onChange={(e) => patchMonth((m) => { m.notesDraft = e.target.value })}
+            onChange={(e) =>
+              patchMonth((m) => {
+                m.notesDraft = e.target.value
+              })
+            }
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault()
@@ -423,18 +488,29 @@ export function CashflowPage({ store, monthKey, update }: Props) {
       </section>
 
       <section className="card chart-card">
-        <h2>Cashflow — {formatMonthLabel(monthKey)}</h2>
+        <h2>Cashflow - {formatMonthLabel(monthKey)}</h2>
         <div style={{ width: '100%', height: 280 }}>
           <ResponsiveContainer>
             <BarChart data={chartData} margin={{ top: 16, right: 8, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e5ef" />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-12} textAnchor="end" height={60} />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 11 }}
+                interval={0}
+                angle={-12}
+                textAnchor="end"
+                height={60}
+              />
               <YAxis tickFormatter={(v) => compactAxis(Number(v), currency, gbpToKes)} width={56} />
               <Tooltip
                 formatter={(v) => money(Number(v ?? 0))}
                 contentStyle={{ borderRadius: 12, borderColor: '#e2e5ef' }}
               />
-              <Bar dataKey="value" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                {chartData.map((row, i) => (
+                  <Cell key={i} fill={row.fill} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -442,7 +518,7 @@ export function CashflowPage({ store, monthKey, update }: Props) {
 
       <section className="card">
         <div className="card-head">
-          <h2>Logs — {formatMonthLabel(monthKey)}</h2>
+          <h2>Logs - {formatMonthLabel(monthKey)}</h2>
           <span className="footnote">{logs.length} saved logs, newest first</span>
         </div>
         {logs.length === 0 ? (

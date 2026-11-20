@@ -9,16 +9,20 @@ export function cashflowDerived(m: CashflowMonth) {
   const extras = sumNamed(m.extras)
   const propertyExpenses = sumNamed(m.propertyExpenses)
   const netBreakdown = m.netIncome - incomeExpenses
-  const baseForSavings = netBreakdown + extras
+  // Spec: % of max(0, Net Breakdown + Extras)
+  const savingsBase = Math.max(0, netBreakdown + extras)
   const savingsAllocation =
     m.savingsMode === 'percent'
-      ? baseForSavings * (m.savingsValue / 100)
+      ? savingsBase * (m.savingsValue / 100)
       : m.savingsValue
   const netRentalIncome = m.netPropertyIncome - propertyExpenses
+  // Spec: % of max(0, Net Rental)
+  const rentalBase = Math.max(0, netRentalIncome)
   const rentalSavings =
     m.rentalSavingsMode === 'percent'
-      ? netRentalIncome * (m.rentalSavingsValue / 100)
+      ? rentalBase * (m.rentalSavingsValue / 100)
       : m.rentalSavingsValue
+  // Free cash may go negative
   const freeCash =
     netBreakdown + extras + netRentalIncome - savingsAllocation - rentalSavings
   const deductions = Math.max(0, m.grossIncome - m.netIncome)

@@ -40,7 +40,7 @@ function AppRoutes() {
             onMonth={setMonth}
             period={period}
             onPeriod={setPeriod}
-            showPeriod
+            update={update}
             onCurrency={(c: Currency) =>
               update((draft) => {
                 draft.settings.currency = c
@@ -54,20 +54,9 @@ function AppRoutes() {
           />
         }
       >
-        <Route
-          index
-          element={<CashflowPage store={store} monthKey={monthKey} update={update} />}
-        />
-        <Route
-          path="savings"
-          element={
-            <SavingsPage store={store} monthKey={monthKey} period={period} update={update} />
-          }
-        />
-        <Route
-          path="debt"
-          element={<DebtPage store={store} monthKey={monthKey} period={period} update={update} />}
-        />
+        <Route index element={<CashflowPage />} />
+        <Route path="savings" element={<SavingsPage />} />
+        <Route path="debt" element={<DebtPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

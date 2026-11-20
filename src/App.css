@@ -4,11 +4,11 @@
 
 .topbar {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1.25rem;
   flex-wrap: wrap;
-  padding: 0.9rem 1.25rem 0.75rem;
+  padding: 0.75rem 1.25rem;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(10px);
@@ -70,12 +70,47 @@
   font-weight: 600;
 }
 
-.topbar-controls {
+.page-chrome {
+  margin-bottom: 0.25rem;
+}
+
+.page-chrome-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 1.1fr);
+  gap: 0.85rem 1rem;
+  align-items: start;
+}
+
+.page-chrome-left h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 3vw, 2.35rem);
+  letter-spacing: -0.03em;
+}
+
+.page-chrome-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  padding-top: 0.2rem;
+}
+
+.page-chrome-right {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 0.45rem;
-  margin-left: auto;
+}
+
+.card-sub {
+  margin: -0.35rem 0 0.65rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.notes-log-card {
+  padding: 0.85rem 0.95rem;
 }
 
 .month-nav {
@@ -164,21 +199,6 @@
   flex-direction: column;
   gap: 1.1rem;
   animation: rise 0.45s ease both;
-}
-
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.page-header h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.8rem, 3vw, 2.35rem);
-  letter-spacing: -0.03em;
 }
 
 .page-actions {
@@ -404,7 +424,8 @@
   letter-spacing: -0.02em;
 }
 
-.metric-card .value.neg {
+.metric-card .value.neg,
+.neg {
   color: var(--danger);
 }
 
@@ -810,9 +831,13 @@
     grid-column: auto;
   }
 
-  .topbar-controls {
-    width: 100%;
-    align-items: stretch;
+  .page-chrome-row {
+    grid-template-columns: 1fr;
+  }
+
+  .page-chrome-center,
+  .page-chrome-right {
+    align-items: flex-start;
   }
 
   .currency-block {

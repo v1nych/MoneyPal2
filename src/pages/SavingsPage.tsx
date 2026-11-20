@@ -5,13 +5,17 @@ import {
   CartesianGrid,
   Cell,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts'
+import { useOutletContext } from 'react-router-dom'
+import type { ShellOutletContext } from '../components/AppShell'
 import { EmptyState } from '../components/EmptyState'
 import { MoneyInput } from '../components/MoneyInput'
+import { PageChrome } from '../components/PageChrome'
 import {
   compactAxis,
   formatDate,
@@ -25,55 +29,49 @@ import {
   potActualPerformance,
   potBalance,
   potPrincipal,
+  projectedForPeriod,
   projectedNext12Months,
   projectedToDate,
 } from '../lib/savingsMath'
 import { uid } from '../lib/storage'
-import type { MoneyPalStore, PotCategory, SavingsPeriod } from '../types'
 
-const CATEGORIES: PotCategory[] = ['Emergency fund', 'ETF portfolio', 'Pension', 'Other']
-
-interface Props {
-  store: MoneyPalStore
-  monthKey: string
-  period: SavingsPeriod
-  update: (fn: (draft: MoneyPalStore) => void) => void
+type TxnDraft = {
+  type: 'deposit' | 'withdrawal'
+  amount: number
+  date: string
+  note: string
+  perfMode: 'amount' | 'percent'
+  perf: number
 }
 
-export function SavingsPage({ store, monthKey, period, update }: Props) {
+export function SavingsPage() {
+  const { store, monthKey, onMonth, period, onPeriod, onCurrency, onRate, update } =
+    useOutletContext<ShellOutletContext>()
   const { currency, gbpToKes } = store.settings
   const money = (n: number) => formatMoney(n, currency, gbpToKes)
   const [showArchived, setShowArchived] = useState(false)
-  const [filter, setFilter] = useState<'all' | PotCategory>('all')
+  const [filter, setFilter] = useState<'all' | string>('all')
   const [creating, setCreating] = useState(false)
-  const [draft, setDraft] = useState({
-    name: '',
-    category: 'Emergency fund' as PotCategory,
-    rate: 4,
-    notes: '',
-    opening: 0,
-  })
+  const [draft, setDraft] = useState({ name: '', rate: 4 })
   const [openTxn, setOpenTxn] = useState<Record<string, 'payment' | 'performance' | null>>({})
-  const [txnDraft, setTxnDraft] = useState<
-    Record<string, { type: 'deposit' | 'withdrawal'; amount: number; date: string; note: string; perf: number }>
-  >({})
+  const [txnDraft, setTxnDraft] = useState<Record<string, TxnDraft>>({})
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [ledgerFilter, setLedgerFilter] = useState<'all' | string>('all')
 
   const pots = store.pots.filter((p) => (showArchived ? !!p.archivedAt : !p.archivedAt))
-  const visible = pots.filter((p) => (filter === 'all' ? true : p.category === filter))
+  const visible = pots.filter((p) => (filter === 'all' ? true : p.id === filter))
+  const activePots = store.pots.filter((p) => !p.archivedAt)
 
   const periodLabel =
     period === 'all' ? 'All time' : period === 'year' ? monthKey.slice(0, 4) : formatMonthLabel(monthKey)
 
   const summary = useMemo(() => {
-    const active = store.pots.filter((p) => !p.archivedAt)
     let principal = 0
     let projected = 0
     let actual = 0
     let balance = 0
     let next12 = 0
-    for (const pot of active) {
+    for (const pot of activePots) {
       const entries = store.savingsEntries.filter((e) => e.potId === pot.id)
       const periodEntries = entries.filter((e) => entryInPeriod(e, period, monthKey))
       const scoped = period === 'all' ? entries : periodEntries
@@ -82,32 +80,23 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
       const bal = potBalance(entries, pot.id)
       balance += bal
       next12 += projectedNext12Months(bal, pot.expectedAnnualRate)
-      if (period === 'all') projected += projectedToDate(pot, entries)
-      else if (period === 'month') projected += bal * (pot.expectedAnnualRate / 12)
-      else projected += bal * pot.expectedAnnualRate
+      projected += projectedForPeriod(bal, pot.expectedAnnualRate, period, pot, entries)
     }
     return { principal, projected, actual, balance, next12, vs: actual - projected }
-  }, [store.pots, store.savingsEntries, period, monthKey])
+  }, [activePots, store.savingsEntries, period, monthKey])
 
   const chartPrincipal = visible.map((pot) => {
     const entries = store.savingsEntries.filter((e) => e.potId === pot.id)
-    return {
-      name: pot.name,
-      principal: potPrincipal(entries, pot.id),
-    }
+    return { name: pot.name, principal: potPrincipal(entries, pot.id) }
   })
 
   const chartPerf = visible.map((pot) => {
     const entries = store.savingsEntries.filter((e) => e.potId === pot.id)
     const bal = potBalance(entries, pot.id)
-    const projected =
-      period === 'all'
-        ? projectedToDate(pot, entries)
-        : bal * (pot.expectedAnnualRate / (period === 'month' ? 12 : 1))
-    const actualEntries = entries.filter(
-      (e) => e.type === 'performance' && entryInPeriod(e, period, monthKey),
-    )
-    const actual = actualEntries.reduce((s, e) => s + e.amount, 0)
+    const projected = projectedForPeriod(bal, pot.expectedAnnualRate, period, pot, entries)
+    const actual = entries
+      .filter((e) => e.type === 'performance' && entryInPeriod(e, period, monthKey))
+      .reduce((s, e) => s + e.amount, 0)
     return { name: pot.name, projected, actual }
   })
 
@@ -120,7 +109,14 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
     if (!txnDraft[potId]) {
       setTxnDraft((prev) => ({
         ...prev,
-        [potId]: { type: 'deposit', amount: 0, date: todayISO(), note: '', perf: 0 },
+        [potId]: {
+          type: 'deposit',
+          amount: 0,
+          date: todayISO(),
+          note: '',
+          perfMode: 'amount',
+          perf: 0,
+        },
       }))
     }
   }
@@ -133,9 +129,8 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
       s.pots.unshift({
         id,
         name: draft.name.trim(),
-        category: draft.category,
         expectedAnnualRate: draft.rate / 100,
-        notes: draft.notes,
+        notes: '',
         createdAt: now,
         archivedAt: null,
       })
@@ -148,28 +143,37 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
         note: '',
         loggedAt: now,
       })
-      if (draft.opening > 0) {
-        s.savingsEntries.unshift({
-          id: uid('se'),
-          potId: id,
-          type: 'deposit',
-          amount: draft.opening,
-          effectiveDate: todayISO(),
-          note: 'Opening balance',
-          loggedAt: now,
-        })
-      }
     })
     setCreating(false)
-    setDraft({ name: '', category: 'Emergency fund', rate: 4, notes: '', opening: 0 })
+    setDraft({ name: '', rate: 4 })
   }
 
   return (
     <main className="page">
-      <div className="page-header">
-        <div>
-          <h1>Savings</h1>
-          <div className="filters" style={{ marginTop: '0.65rem' }}>
+      <PageChrome
+        title="Savings"
+        store={store}
+        monthKey={monthKey}
+        onMonth={onMonth}
+        period={period}
+        onPeriod={onPeriod}
+        showPeriod
+        onCurrency={onCurrency}
+        onRate={onRate}
+        actions={
+          <div className="page-actions">
+            <button type="button" className="btn subtle" onClick={() => setShowArchived((v) => !v)}>
+              {showArchived
+                ? 'Show active'
+                : `Archived (${store.pots.filter((p) => p.archivedAt).length})`}
+            </button>
+            <button type="button" className="btn primary" onClick={() => setCreating(true)}>
+              + New pot
+            </button>
+          </div>
+        }
+        filters={
+          <div className="filters" style={{ marginTop: '0.55rem' }}>
             <button
               type="button"
               className={`filter-chip ${filter === 'all' ? 'on' : ''}`}
@@ -177,34 +181,27 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
             >
               All active pots
             </button>
-            {CATEGORIES.filter((c) => c !== 'Other').map((c) => (
+            {activePots.map((p) => (
               <button
-                key={c}
+                key={p.id}
                 type="button"
-                className={`filter-chip ${filter === c ? 'on' : ''}`}
-                onClick={() => setFilter(c)}
+                className={`filter-chip ${filter === p.id ? 'on' : ''}`}
+                onClick={() => setFilter(p.id)}
               >
-                {c}
+                {p.name}
               </button>
             ))}
           </div>
-        </div>
-        <div className="page-actions">
-          <button type="button" className="btn subtle" onClick={() => setShowArchived((v) => !v)}>
-            {showArchived ? 'Show active' : `Archived (${store.pots.filter((p) => p.archivedAt).length})`}
-          </button>
-          <button type="button" className="btn primary" onClick={() => setCreating(true)}>
-            + New pot
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {creating && (
         <section className="card">
           <h2>New pot</h2>
+          <p className="card-sub">Name it and set the expected annual rate.</p>
           <div className="form-grid two">
             <label>
-              Name
+              Pot name
               <input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -212,40 +209,11 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
               />
             </label>
             <label>
-              Category
-              <select
-                value={draft.category}
-                onChange={(e) => setDraft({ ...draft, category: e.target.value as PotCategory })}
-              >
-                {CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Expected annual rate (%)
+              Expected rate %
               <input
                 type="number"
                 value={draft.rate}
                 onChange={(e) => setDraft({ ...draft, rate: Number(e.target.value) || 0 })}
-              />
-            </label>
-            <label>
-              Opening deposit
-              <MoneyInput
-                value={draft.opening}
-                currency={currency}
-                gbpToKes={gbpToKes}
-                onChange={(n) => setDraft({ ...draft, opening: n })}
-              />
-            </label>
-            <label style={{ gridColumn: '1 / -1' }}>
-              Notes
-              <textarea
-                value={draft.notes}
-                onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
               />
             </label>
           </div>
@@ -282,11 +250,12 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
             const proj = projectedToDate(pot, entries)
             const next12 = projectedNext12Months(balance, pot.expectedAnnualRate)
             const mode = openTxn[pot.id]
-            const td = txnDraft[pot.id] ?? {
-              type: 'deposit' as const,
+            const td: TxnDraft = txnDraft[pot.id] ?? {
+              type: 'deposit',
               amount: 0,
               date: todayISO(),
               note: '',
+              perfMode: 'amount',
               perf: 0,
             }
 
@@ -307,11 +276,11 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
                     <strong className={actual < 0 ? 'neg' : ''}>{money(actual)}</strong>
                   </div>
                   <div className="stat">
-                    <span className="label">Projected to date</span>
+                    <span className="label">Projected performance to date</span>
                     <strong>{money(proj)}</strong>
                   </div>
                   <div className="stat">
-                    <span className="label">Projected next 12 months</span>
+                    <span className="label">Projected performance, next 12 months</span>
                     <strong>{money(next12)}</strong>
                   </div>
                 </div>
@@ -452,18 +421,58 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
                 )}
                 {mode === 'performance' && (
                   <div className="txn-panel">
+                    <div className="mini-seg">
+                      <button
+                        type="button"
+                        className={td.perfMode === 'amount' ? 'on' : ''}
+                        onClick={() =>
+                          setTxnDraft((prev) => ({
+                            ...prev,
+                            [pot.id]: { ...td, perfMode: 'amount' },
+                          }))
+                        }
+                      >
+                        Amount
+                      </button>
+                      <button
+                        type="button"
+                        className={td.perfMode === 'percent' ? 'on' : ''}
+                        onClick={() =>
+                          setTxnDraft((prev) => ({
+                            ...prev,
+                            [pot.id]: { ...td, perfMode: 'percent' },
+                          }))
+                        }
+                      >
+                        %
+                      </button>
+                    </div>
                     <div className="form-grid two">
                       <label>
-                        Performance amount
-                        <MoneyInput
-                          value={td.perf}
-                          currency={currency}
-                          gbpToKes={gbpToKes}
-                          min={-1e12}
-                          onChange={(n) =>
-                            setTxnDraft((prev) => ({ ...prev, [pot.id]: { ...td, perf: n } }))
-                          }
-                        />
+                        {td.perfMode === 'percent' ? '% of principal' : 'Performance amount'}
+                        {td.perfMode === 'percent' ? (
+                          <input
+                            type="number"
+                            step={0.01}
+                            value={td.perf}
+                            onChange={(e) =>
+                              setTxnDraft((prev) => ({
+                                ...prev,
+                                [pot.id]: { ...td, perf: Number(e.target.value) || 0 },
+                              }))
+                            }
+                          />
+                        ) : (
+                          <MoneyInput
+                            value={td.perf}
+                            currency={currency}
+                            gbpToKes={gbpToKes}
+                            min={-1e12}
+                            onChange={(n) =>
+                              setTxnDraft((prev) => ({ ...prev, [pot.id]: { ...td, perf: n } }))
+                            }
+                          />
+                        )}
                       </label>
                       <label>
                         Date
@@ -496,14 +505,20 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
                       type="button"
                       className="btn primary"
                       onClick={() => {
+                        const amount =
+                          td.perfMode === 'percent' ? principal * (td.perf / 100) : td.perf
                         update((s) => {
                           s.savingsEntries.unshift({
                             id: uid('se'),
                             potId: pot.id,
                             type: 'performance',
-                            amount: td.perf,
+                            amount,
                             effectiveDate: td.date,
-                            note: td.note,
+                            note:
+                              td.note ||
+                              (td.perfMode === 'percent'
+                                ? `${td.perf}% of principal`
+                                : ''),
                             loggedAt: new Date().toISOString(),
                           })
                         })
@@ -557,8 +572,12 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
         chart below follow the period filter ({periodLabel}).
       </p>
       <p className="footnote">
-        {showArchived ? 'Archived pots' : filter === 'all' ? 'All active pots' : filter} (
-        {visible.length}) — {periodLabel}
+        {showArchived
+          ? 'Archived pots'
+          : filter === 'all'
+            ? 'All active pots'
+            : activePots.find((p) => p.id === filter)?.name ?? 'Pot'}{' '}
+        ({visible.length}) — {periodLabel}
       </p>
 
       <div className="summary-grid">
@@ -570,7 +589,9 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
         <article className="metric-card">
           <p className="eyebrow">Projected performance</p>
           <p className="value">{money(summary.projected)}</p>
-          <p className="hint">At expected rates. Next 12 months on balance: {money(summary.next12)}</p>
+          <p className="hint">
+            At expected rates (daily accrual). Next 12 months on balance: {money(summary.next12)}
+          </p>
         </article>
         <article className="metric-card">
           <p className="eyebrow">Actual performance</p>
@@ -585,7 +606,7 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
       </div>
 
       <section className="card chart-card">
-        <h2>Savings Flow — {periodLabel}</h2>
+        <h2>Savings Flow - {periodLabel}</h2>
         <div className="dual-charts">
           <div style={{ width: '100%', height: 260 }}>
             <p className="chart-sub">Principal</p>
@@ -608,6 +629,7 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
                 <YAxis tickFormatter={(v) => compactAxis(Number(v), currency, gbpToKes)} width={52} />
                 <Tooltip formatter={(v) => money(Number(v ?? 0))} />
                 <Legend />
+                <ReferenceLine y={0} stroke="#c5c9d8" />
                 <Bar dataKey="projected" name="Projected" fill="#ea580c" radius={[8, 8, 0, 0]} />
                 <Bar dataKey="actual" name="Actual" radius={[8, 8, 0, 0]}>
                   {chartPerf.map((row, i) => (
@@ -635,33 +657,37 @@ export function SavingsPage({ store, monthKey, period, update }: Props) {
             ))}
           </select>
         </div>
-        <div className="log-list">
-          {ledger.map((e) => {
-            const pot = store.pots.find((p) => p.id === e.potId)
-            const label =
-              e.type === 'created'
-                ? 'Pot created'
-                : e.type === 'deposit'
-                  ? `Deposit ${money(e.amount)}`
-                  : e.type === 'withdrawal'
-                    ? `Withdrawal ${money(e.amount)}`
-                    : `Performance ${money(e.amount)}`
-            return (
-              <div className="ledger-row" key={e.id}>
-                <div>
-                  <div className="title">
-                    {label}
-                    <span className="pill">{pot?.name ?? 'Unknown'}</span>
-                  </div>
-                  {e.note ? <div className="note">{e.note}</div> : null}
-                  <div className="ledger-meta">
-                    Effective {formatDate(e.effectiveDate)} · logged {formatDateTime(e.loggedAt)}
+        {ledger.length === 0 ? (
+          <p className="footnote">No activity yet.</p>
+        ) : (
+          <div className="log-list">
+            {ledger.map((e) => {
+              const pot = store.pots.find((p) => p.id === e.potId)
+              const label =
+                e.type === 'created'
+                  ? 'Pot created'
+                  : e.type === 'deposit'
+                    ? `Deposit ${money(e.amount)}`
+                    : e.type === 'withdrawal'
+                      ? `Withdrawal ${money(e.amount)}`
+                      : `Performance ${money(e.amount)}`
+              return (
+                <div className="ledger-row" key={e.id}>
+                  <div>
+                    <div className="title">
+                      {label}
+                      <span className="pill">{pot?.name ?? 'Unknown'}</span>
+                    </div>
+                    {e.note ? <div className="note">{e.note}</div> : null}
+                    <div className="ledger-meta">
+                      Effective {formatDate(e.effectiveDate)} · logged {formatDateTime(e.loggedAt)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </section>
 
       {deleteId && (
